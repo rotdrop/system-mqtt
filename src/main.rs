@@ -12,6 +12,16 @@ use sysinfo::{CpuExt, DiskExt, System, SystemExt};
 use tokio::{fs, signal, time};
 use url::Url;
 
+use battery::units::electric_potential::volt;
+use battery::units::electric_current::ampere;
+use battery::units::energy::watt_hour;
+use battery::units::power::watt;
+use battery::units::ratio::ratio;
+use battery::units::thermodynamic_temperature::degree_celsius;
+use battery::units::time::second;
+/// use battery::units::Unit;
+/// use battery::State;
+
 const KEYRING_SERVICE_NAME: &str = "system-mqtt";
 
 #[derive(FromArgs)]
@@ -310,10 +320,120 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("measurement"),
             "battery_level",
             Some("%"),
-            Some("mdi:battery"),
+            Some("mdi:battery-alert"),
         )
         .await
         .context("Failed to register battery level topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("battery"),
+            Some("measurement"),
+            "battery_health",
+            Some("%"),
+            Some("mdi:battery"),
+        )
+        .await
+        .context("Failed to register battery health topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("battery"),
+            Some("measurement"),
+            "battery_voltage",
+            Some("V"),
+            Some("mdi:sine-wave"),
+        )
+        .await
+        .context("Failed to register battery voltage topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("current"),
+            Some("measurement"),
+            "battery_voltage",
+            Some("A"),
+            Some("mdi:current-dc"),
+        )
+        .await
+        .context("Failed to register battery current topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("power"),
+            Some("measurement"),
+            "battery_power",
+            Some("W"),
+            Some("mdi:flash"),
+        )
+        .await
+        .context("Failed to register battery power topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("energy"),
+            Some("measurement"),
+            "battery_energy",
+            Some("Wh"),
+            Some("mdi:lightning_bold"),
+        )
+        .await
+        .context("Failed to register battery current energy topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("energy"),
+            Some("measurement"),
+            "battery_energy_full",
+            Some("Wh"),
+            Some("mdi:lightning_bold"),
+        )
+        .await
+        .context("Failed to register battery last full energy topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("energy"),
+            Some("measurement"),
+            "battery_energy_full_design",
+            Some("Wh"),
+            Some("mdi:lightning_bold"),
+        )
+        .await
+        .context("Failed to register battery full design energy topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("time"),
+            Some("measurement"),
+            "battery_time_to_full",
+            Some("s"),
+            Some("mdi:timer"),
+        )
+        .await
+        .context("Failed to register battery time to full topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("time"),
+            Some("measurement"),
+            "battery_time_to_empty",
+            Some("s"),
+            Some("mdi:timer"),
+        )
+        .await
+        .context("Failed to register battery time to empty topic.")?;
+    home_assistant
+        .register_topic(
+            "sensor",
+            Some("temperature"),
+            Some("measurement"),
+            "battery_temperature",
+            Some("°C"),
+            Some("mdi:thermometer"),
+        )
+        .await
+        .context("Failed to register battery temperature topic.")?;
     home_assistant
         .register_topic(
             "sensor",
@@ -414,17 +534,51 @@ async fn availability_trampoline(
                         State::Discharging => "discharging",
                         State::Empty => "empty",
                         State::Full => "full",
-                        _ => "unknown",
+                        _ => "None",
                     };
-
                     home_assistant.publish("battery_state", battery_state.to_string()).await;
 
-                    let battery_full = battery.energy_full();
-                    let battery_power = battery.energy();
-                    let battery_level = battery_power / battery_full;
+		    let battery_level = battery.state_of_charge().get::<ratio>();
+		    let battery_health = battery.state_of_health().get::<ratio>();
 
-                    home_assistant.publish("battery_level", format!("{:03}", battery_level.value)).await;
-                }
+		    let battery_voltage = battery.voltage().get::<volt>();
+		    let battery_current = battery.current().get::<ampere>();
+
+		    let battery_power = battery.energy_rate().get::<watt>();
+                    let battery_energy = battery.energy().get::<watt_hour>();
+                    let battery_energy_full = battery.energy_full().get::<watt_hour>();
+                    let battery_energy_full_design = battery.energy_full().get::<watt_hour>();
+
+		    let battery_time_to_full = match battery.time_to_full() {
+			Some(time) => time.get::<second>().to_string(),
+			None => "None".to_string(),
+		    };
+		    let battery_time_to_empty = match  battery.time_to_empty() {
+			Some(time) => time.get::<second>().to_string(),
+			None => "None".to_string(),
+		    };
+
+ 		    let battery_temperature = match battery.temperature() {
+			Some(value) => value.get::<degree_celsius>().to_string(),
+			None => "None".to_string(),
+		    };
+
+                    home_assistant.publish("battery_level", format!("{:03}", battery_level)).await;
+                    home_assistant.publish("battery_health", format!("{:03}", battery_health)).await;
+
+		    home_assistant.publish("battery_voltage", format!("{:03}", battery_voltage)).await;
+		    home_assistant.publish("battery_current", format!("{:03}", battery_current)).await;
+
+                    home_assistant.publish("battery_power", format!("{:03}", battery_power)).await;
+		    home_assistant.publish("battery_energy", format!("{:03}", battery_energy)).await;
+		    home_assistant.publish("battery_energy_full", format!("{:03}", battery_energy_full)).await;
+		    home_assistant.publish("battery_energy_full_design", format!("{:03}", battery_energy_full_design)).await;
+
+                    home_assistant.publish("battery_power", battery_time_to_empty).await;
+                    home_assistant.publish("battery_power", battery_time_to_full).await;
+
+                    home_assistant.publish("battery_temperature", battery_temperature).await;
+		}
             }
             _ = signal::ctrl_c() => {
                 log::info!("Terminate signal has been received.");
