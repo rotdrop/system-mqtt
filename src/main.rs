@@ -16,11 +16,14 @@ use battery::units::electric_potential::volt;
 use battery::units::electric_current::ampere;
 use battery::units::energy::watt_hour;
 use battery::units::power::watt;
-use battery::units::ratio::ratio;
+use battery::units::ratio::percent;
 use battery::units::thermodynamic_temperature::degree_celsius;
 use battery::units::time::second;
 /// use battery::units::Unit;
 /// use battery::State;
+
+use inflector::cases::titlecase::to_title_case;
+use inflector::cases::snakecase::to_snake_case;
 
 const KEYRING_SERVICE_NAME: &str = "system-mqtt";
 
@@ -263,7 +266,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some(""),
-            "available",
+	    None,
+            Some("available"),
             None,
             Some("mdi:check-network-outline"),
         )
@@ -273,9 +277,10 @@ async fn application_trampoline(config: &Config) -> Result<()> {
         .register_topic(
             "sensor",
             None,
-            Some(""),
-            "uptime",
-            Some("days"),
+            Some("measurement"),
+	    None,
+            Some("uptime"),
+            Some("seconds"),
             Some("mdi:timer-sand"),
         )
         .await
@@ -285,7 +290,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some("measurement"),
-            "cpu",
+	    Some("Central Processing Unit"),
+            Some("cpu"),
             Some("%"),
             Some("mdi:gauge"),
         )
@@ -296,7 +302,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some("measurement"),
-            "memory",
+	    None,
+            Some("memory"),
             Some("%"),
             Some("mdi:gauge"),
         )
@@ -307,7 +314,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some("measurement"),
-            "swap",
+	    None,
+            Some("swap"),
             Some("%"),
             Some("mdi:gauge"),
         )
@@ -318,9 +326,10 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("battery"),
             Some("measurement"),
-            "battery_level",
+            Some("battery level"),
+	    None,
             Some("%"),
-            Some("mdi:battery-alert"),
+            Some("mdi:battery"),
         )
         .await
         .context("Failed to register battery level topic.")?;
@@ -329,9 +338,10 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("battery"),
             Some("measurement"),
-            "battery_health",
+            Some("battery health"),
+	    None,
             Some("%"),
-            Some("mdi:battery"),
+            Some("mdi:battery-alert"),
         )
         .await
         .context("Failed to register battery health topic.")?;
@@ -340,7 +350,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("battery"),
             Some("measurement"),
-            "battery_voltage",
+            Some("battery voltage"),
+	    None,
             Some("V"),
             Some("mdi:sine-wave"),
         )
@@ -351,7 +362,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("current"),
             Some("measurement"),
-            "battery_voltage",
+            Some("battery current"),
+	    None,
             Some("A"),
             Some("mdi:current-dc"),
         )
@@ -362,7 +374,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("power"),
             Some("measurement"),
-            "battery_power",
+            Some("battery power"),
+	    None,
             Some("W"),
             Some("mdi:flash"),
         )
@@ -373,9 +386,10 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("energy"),
             Some("measurement"),
-            "battery_energy",
+            Some("battery energy"),
+	    None,
             Some("Wh"),
-            Some("mdi:lightning_bold"),
+            Some("mdi:lightning-bolt"),
         )
         .await
         .context("Failed to register battery current energy topic.")?;
@@ -384,9 +398,10 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("energy"),
             Some("measurement"),
-            "battery_energy_full",
+            Some("battery energy full"),
+	    None,
             Some("Wh"),
-            Some("mdi:lightning_bold"),
+            Some("mdi:lightning-bolt"),
         )
         .await
         .context("Failed to register battery last full energy topic.")?;
@@ -395,31 +410,34 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("energy"),
             Some("measurement"),
-            "battery_energy_full_design",
+            Some("battery energy full design"),
+	    None,
             Some("Wh"),
-            Some("mdi:lightning_bold"),
+            Some("mdi:lightning-bolt"),
         )
         .await
         .context("Failed to register battery full design energy topic.")?;
     home_assistant
         .register_topic(
             "sensor",
-            Some("time"),
+            None,
             Some("measurement"),
-            "battery_time_to_full",
-            Some("s"),
-            Some("mdi:timer"),
+            Some("battery time to full"),
+	    None,
+            Some("seconds"),
+            Some("mdi:timer-sand"),
         )
         .await
         .context("Failed to register battery time to full topic.")?;
     home_assistant
         .register_topic(
             "sensor",
-            Some("time"),
+            None,
             Some("measurement"),
-            "battery_time_to_empty",
-            Some("s"),
-            Some("mdi:timer"),
+            Some("battery time to empty"),
+	    None,
+            Some("seconds"),
+            Some("mdi:timer-sand"),
         )
         .await
         .context("Failed to register battery time to empty topic.")?;
@@ -428,7 +446,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             Some("temperature"),
             Some("measurement"),
-            "battery_temperature",
+            Some("battery temperature"),
+	    None,
             Some("°C"),
             Some("mdi:thermometer"),
         )
@@ -439,7 +458,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some(""),
-            "battery_state",
+            Some("battery state"),
+	    None,
             None,
             Some("mdi:battery"),
         )
@@ -453,7 +473,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
                 "sensor",
                 None,
                 Some("total"),
-                &drive.name,
+                Some(&drive.name),
+		None,
                 Some("%"),
                 Some("mdi:folder"),
             )
@@ -501,7 +522,7 @@ async fn availability_trampoline(
                 system.refresh_cpu();
 
                 // Report uptime.
-                let uptime = system.uptime() as f32 / 60.0 / 60.0 / 24.0; // Convert from seconds to days.
+                let uptime = system.uptime(); //  as f32 / 60.0 / 60.0 / 24.0; // Convert from seconds to days.
                 home_assistant.publish("uptime", format!("{}", uptime)).await;
 
                 // Report CPU usage.
@@ -538,8 +559,8 @@ async fn availability_trampoline(
                     };
                     home_assistant.publish("battery_state", battery_state.to_string()).await;
 
-		    let battery_level = battery.state_of_charge().get::<ratio>();
-		    let battery_health = battery.state_of_health().get::<ratio>();
+		    let battery_level = battery.state_of_charge().get::<percent>();
+		    let battery_health = battery.state_of_health().get::<percent>();
 
 		    let battery_voltage = battery.voltage().get::<volt>();
 		    let battery_current = battery.current().get::<ampere>();
@@ -574,8 +595,8 @@ async fn availability_trampoline(
 		    home_assistant.publish("battery_energy_full", format!("{:03}", battery_energy_full)).await;
 		    home_assistant.publish("battery_energy_full_design", format!("{:03}", battery_energy_full_design)).await;
 
-                    home_assistant.publish("battery_power", battery_time_to_empty).await;
-                    home_assistant.publish("battery_power", battery_time_to_full).await;
+                    home_assistant.publish("battery_time_to_empty", battery_time_to_empty).await;
+                    home_assistant.publish("battery_time_to_full", battery_time_to_full).await;
 
                     home_assistant.publish("battery_temperature", battery_temperature).await;
 		}
@@ -615,15 +636,25 @@ impl HomeAssistant {
         topic_class: &str,
         device_class: Option<&str>,
         state_class: Option<&str>,
-        topic_name: &str,
+	display_name: Option<&str>,
+	topic_name: Option<&str>,
         unit_of_measurement: Option<&str>,
         icon: Option<&str>,
     ) -> Result<()> {
-        log::info!("Registering topic `{}`.", topic_name);
+        #[derive(Serialize)]
+	struct TopicDeviceConfig {
+	    identifiers: Vec<String>,
+	    name: String,
+	    model: String,
+	    manufacturer: String,
+	}
 
         #[derive(Serialize)]
         struct TopicConfig {
             name: String,
+	    unique_id: String,
+	    object_id: String,
+	    device: TopicDeviceConfig,
 
             #[serde(skip_serializing_if = "Option::is_none")]
             device_class: Option<String>,
@@ -633,13 +664,40 @@ impl HomeAssistant {
             icon: Option<String>,
         }
 
+	let display_name = match display_name {
+	    Some(value) => value,
+	    None => {
+		match topic_name {
+		    Some(topic) => topic,
+		    None => {
+			log::error!("Display name and topic name are both None, one of them must be given.");
+			return Ok(())
+		    }
+		}
+	    }
+	};
+	let topic_name = to_snake_case(match topic_name {
+	    Some(value) => value,
+	    None => display_name,
+	}.as_ref());
+
+        log::info!("Registering topic `{}`.", topic_name);
+
         let message = serde_json::ser::to_string(&TopicConfig {
-            name: format!("{}-{}", self.hostname, topic_name),
+            name: to_title_case(format!("{} {}", self.hostname, display_name).as_ref()),
+	    unique_id: format!("system_mqtt_{}_{}", self.hostname, topic_name),
+	    object_id: format!("system_mqtt_{}_{}", self.hostname, topic_name),
             device_class: device_class.map(str::to_string),
             state_class: state_class.map(str::to_string),
             state_topic: format!("system-mqtt/{}/{}", self.hostname, topic_name),
             unit_of_measurement: unit_of_measurement.map(str::to_string),
             icon: icon.map(str::to_string),
+	    device: TopicDeviceConfig {
+		name: format!("System MQTT {}", to_title_case(self.hostname.as_ref())),
+		identifiers: vec![format!("system_mqtt_{}", self.hostname)],
+		model: "Linux Computer".to_string(),
+		manufacturer: "Open Source Community".to_string(),
+	    },
         })
         .context("Failed to serialize topic information.")?;
         let mut publish = Publish::new(
@@ -657,6 +715,11 @@ impl HomeAssistant {
 
         self.registered_topics.insert(topic_name.to_string());
 
+        log::info!("Registered topic `{}`.", format!(
+            "homeassistant/{}/system-mqtt-{}/{}/config",
+            topic_class, self.hostname, topic_name
+        ));
+
         Ok(())
     }
 
@@ -669,6 +732,8 @@ impl HomeAssistant {
                 value.into(),
             );
             publish.set_retain(false);
+
+	    log::info!("Published to `{}`.",  format!("system-mqtt/{}/{}", self.hostname, topic_name));
 
             if let Err(error) = self.client.publish(&publish).await {
                 log::error!("Failed to publish topic `{}`: {:?}", topic_name, error);
