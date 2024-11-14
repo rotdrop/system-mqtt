@@ -10,7 +10,7 @@ repository = "https://github.com/IamTheCarl/system-mqtt"
 
 [dependencies]
 argh = "0.1"
-battery = "0.7"
+battery = { git = "https://github.com/rotdrop/rust-battery.git", branch = "master" }
 sysinfo = "0.28.1"
 keyring = "2.0"
 log = "0.4"
