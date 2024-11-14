@@ -3,6 +3,16 @@
 version = 3
 
 [[package]]
+name = "Inflector"
+version = "0.11.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "fe438c63458706e03479442743baae6c88256498e6431708f6dfc520a26515d3"
+dependencies = [
+ "lazy_static",
+ "regex",
+]
+
+[[package]]
 name = "addr2line"
 version = "0.24.2"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -279,7 +289,7 @@ checksum = "9e1b586273c5702936fe7b7d6896644d8be71e6314cfe09d3167c95f712589e8"
 [[package]]
 name = "battery"
 version = "0.7.8"
-source = "git+https://github.com/rotdrop/rust-battery.git?branch=master#9866ddacb369280bcb22f2c302c93899c11209ce"
+source = "git+https://github.com/rotdrop/rust-battery.git?branch=master#928878835191eb7f0949e668b78a5c8dd6e9ba68"
 dependencies = [
  "cfg-if",
  "core-foundation 0.7.0",
@@ -1919,6 +1929,7 @@ dependencies = [
 name = "system-mqtt"
 version = "0.3.1"
 dependencies = [
+ "Inflector",
  "anyhow",
  "argh",
  "battery",
