@@ -265,7 +265,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
         .register_topic(
             "sensor",
             None,
-            Some(""),
+            None,
 	    None,
             Some("available"),
             None,
@@ -457,7 +457,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
         .register_topic(
             "sensor",
             None,
-            Some(""),
+            None,
             Some("battery state"),
 	    None,
             None,
@@ -724,16 +724,16 @@ impl HomeAssistant {
     }
 
     pub async fn publish(&self, topic_name: &str, value: String) {
+	let topic_name: String = to_snake_case(topic_name);
+
         log::debug!("PUBLISH `{}` TO `{}`", value, topic_name);
 
-        if self.registered_topics.contains(topic_name) {
-            let mut publish = Publish::new(
-                format!("system-mqtt/{}/{}", self.hostname, topic_name),
-                value.into(),
-            );
-            publish.set_retain(false);
+	let mqtt_topic = format!("system-mqtt/{}/{}", self.hostname, topic_name);
 
-	    log::info!("Published to `{}`.",  format!("system-mqtt/{}/{}", self.hostname, topic_name));
+        if self.registered_topics.contains::<String>(&topic_name) {
+	    log::info!("Publish {} to `{}`.",  value, mqtt_topic);
+            let mut publish = Publish::new(mqtt_topic.into(), value.into());
+            publish.set_retain(false);
 
             if let Err(error) = self.client.publish(&publish).await {
                 log::error!("Failed to publish topic `{}`: {:?}", topic_name, error);
