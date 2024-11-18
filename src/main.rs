@@ -98,6 +98,9 @@ struct Config {
     /// The interval to update at.
     update_interval: Duration,
 
+    /// Maybe a larger update interval for disk drives
+    drives_update_interval: Duration,
+
     /// The names of drives, or the paths to where they are mounted.
     drives: Vec<DriveConfig>,
 }
@@ -109,6 +112,7 @@ impl Default for Config {
             username: None,
             password_source: PasswordSource::Keyring,
             update_interval: Duration::from_secs(30),
+            drives_update_interval: Duration::from_secs(600), // be nice to the automounter
             drives: vec![DriveConfig {
                 path: PathBuf::from("/"),
                 name: String::from("root"),
@@ -266,8 +270,8 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             None,
-	    None,
-            Some("available"),
+            None,
+            Some("availability"),
             None,
             Some("mdi:check-network-outline"),
         )
@@ -278,7 +282,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some("measurement"),
-	    None,
+            None,
             Some("uptime"),
             Some("seconds"),
             Some("mdi:timer-sand"),
@@ -290,7 +294,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some("measurement"),
-	    Some("Central Processing Unit"),
+            Some("Central Processing Unit"),
             Some("cpu"),
             Some("%"),
             Some("mdi:gauge"),
@@ -302,7 +306,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some("measurement"),
-	    None,
+            None,
             Some("memory"),
             Some("%"),
             Some("mdi:gauge"),
@@ -314,7 +318,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             "sensor",
             None,
             Some("measurement"),
-	    None,
+            None,
             Some("swap"),
             Some("%"),
             Some("mdi:gauge"),
@@ -327,7 +331,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("battery"),
             Some("measurement"),
             Some("battery level"),
-	    None,
+            None,
             Some("%"),
             Some("mdi:battery"),
         )
@@ -339,7 +343,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("battery"),
             Some("measurement"),
             Some("battery health"),
-	    None,
+            None,
             Some("%"),
             Some("mdi:battery-alert"),
         )
@@ -351,7 +355,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("battery"),
             Some("measurement"),
             Some("battery voltage"),
-	    None,
+            None,
             Some("V"),
             Some("mdi:sine-wave"),
         )
@@ -363,7 +367,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("current"),
             Some("measurement"),
             Some("battery current"),
-	    None,
+            None,
             Some("A"),
             Some("mdi:current-dc"),
         )
@@ -375,7 +379,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("power"),
             Some("measurement"),
             Some("battery power"),
-	    None,
+            None,
             Some("W"),
             Some("mdi:flash"),
         )
@@ -387,7 +391,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("energy"),
             Some("measurement"),
             Some("battery energy"),
-	    None,
+            None,
             Some("Wh"),
             Some("mdi:lightning-bolt"),
         )
@@ -399,7 +403,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("energy"),
             Some("measurement"),
             Some("battery energy full"),
-	    None,
+            None,
             Some("Wh"),
             Some("mdi:lightning-bolt"),
         )
@@ -411,7 +415,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("energy"),
             Some("measurement"),
             Some("battery energy full design"),
-	    None,
+            None,
             Some("Wh"),
             Some("mdi:lightning-bolt"),
         )
@@ -423,7 +427,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             None,
             Some("measurement"),
             Some("battery time to full"),
-	    None,
+            None,
             Some("seconds"),
             Some("mdi:timer-sand"),
         )
@@ -435,7 +439,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             None,
             Some("measurement"),
             Some("battery time to empty"),
-	    None,
+            None,
             Some("seconds"),
             Some("mdi:timer-sand"),
         )
@@ -447,7 +451,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             Some("temperature"),
             Some("measurement"),
             Some("battery temperature"),
-	    None,
+            None,
             Some("°C"),
             Some("mdi:thermometer"),
         )
@@ -459,7 +463,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             None,
             None,
             Some("battery state"),
-	    None,
+            None,
             None,
             Some("mdi:battery"),
         )
@@ -474,7 +478,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
                 None,
                 Some("total"),
                 Some(&drive.name),
-		None,
+                None,
                 Some("%"),
                 Some("mdi:folder"),
             )
@@ -484,7 +488,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
 
     home_assistant.set_available(true).await?;
 
-    let result = availability_trampoline(&home_assistant, &mut system, config, manager).await;
+    let result = availability_trampoline(&mut home_assistant, &mut system, config, manager).await;
 
     if let Err(error) = home_assistant.set_available(false).await {
         // I don't want this error hiding whatever happened in the main loop.
@@ -499,7 +503,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
 }
 
 async fn availability_trampoline(
-    home_assistant: &HomeAssistant,
+    home_assistant: &mut HomeAssistant,
     system: &mut System,
     config: &Config,
     manager: battery::Manager,
@@ -509,41 +513,44 @@ async fn availability_trampoline(
         .iter()
         .map(|drive_config| (drive_config.path.clone(), drive_config.name.clone()))
         .collect();
-
-    system.refresh_disks();
-    system.refresh_memory();
-    system.refresh_cpu();
+    let drives_skip_limit: u16 = std::cmp::max(1 as u16, (config.drives_update_interval.as_millis() / config.update_interval.as_millis()) as u16);
+    let mut drives_skip_count: u16 = 0xfffe;
 
     loop {
         tokio::select! {
             _ = time::sleep(config.update_interval) => {
-                system.refresh_disks();
                 system.refresh_memory();
                 system.refresh_cpu();
 
                 // Report uptime.
                 let uptime = system.uptime(); //  as f32 / 60.0 / 60.0 / 24.0; // Convert from seconds to days.
-                home_assistant.publish("uptime", format!("{}", uptime)).await;
+                home_assistant.publish("uptime", format!("{}", uptime)).await?;
 
                 // Report CPU usage.
                 let cpu_usage = (system.cpus().iter().map(|cpu| cpu.cpu_usage()).sum::<f32>()) / (system.cpus().len() as f32 * 100.0);
-                home_assistant.publish("cpu", (cpu_usage * 100.0).to_string()).await;
+                home_assistant.publish("cpu", (cpu_usage * 100.0).to_string()).await?;
 
                 // Report memory usage.
                 let memory_percentile = (system.total_memory() - system.available_memory()) as f64 / system.total_memory() as f64;
-                home_assistant.publish("memory", (memory_percentile.clamp(0.0, 1.0)* 100.0).to_string()).await;
+                home_assistant.publish("memory", (memory_percentile.clamp(0.0, 1.0)* 100.0).to_string()).await?;
 
                 // Report swap usage.
                 let swap_percentile = system.used_swap() as f64 / system.free_swap() as f64;
-                home_assistant.publish("swap", (swap_percentile.clamp(0.0, 1.0) * 100.0).to_string()).await;
+                home_assistant.publish("swap", (swap_percentile.clamp(0.0, 1.0) * 100.0).to_string()).await?;
 
-                // Report filesystem usage.
-                for drive in system.disks() {
-                    if let Some(drive_name) = drive_list.get(drive.mount_point()) {
-                        let drive_percentile = (drive.total_space() - drive.available_space()) as f64 / drive.total_space() as f64;
-
-                        home_assistant.publish(drive_name, (drive_percentile.clamp(0.0, 1.0) * 100.0).to_string()).await;
+                drives_skip_count = drives_skip_count + 1;
+                if drives_skip_count >= drives_skip_limit {
+                    system.refresh_disks();
+                    // Report filesystem usage.
+                    for drive in system.disks() {
+                        let mount_point = drive.mount_point();
+                        if let Some(drive_name) = drive_list.get(mount_point) {
+                            log::info!("Refresh Drive Mount Point {}", mount_point.display());
+                            let drive_percentile = (drive.total_space() - drive.available_space()) as f64 / drive.total_space() as f64;
+                            home_assistant.publish(drive_name, (drive_percentile.clamp(0.0, 1.0) * 100.0).to_string()).await?;
+                        }
                     }
+                    drives_skip_count = 0;
                 }
 
                 // TODO we should probably combine the battery charges, but for now we're just going to use the first detected battery.
@@ -557,49 +564,49 @@ async fn availability_trampoline(
                         State::Full => "full",
                         _ => "None",
                     };
-                    home_assistant.publish("battery_state", battery_state.to_string()).await;
+                    home_assistant.publish("battery_state", battery_state.to_string()).await?;
 
-		    let battery_level = battery.state_of_charge().get::<percent>();
-		    let battery_health = battery.state_of_health().get::<percent>();
+                    let battery_level = battery.state_of_charge().get::<percent>();
+                    let battery_health = battery.state_of_health().get::<percent>();
 
-		    let battery_voltage = battery.voltage().get::<volt>();
-		    let battery_current = battery.current().get::<ampere>();
+                    let battery_voltage = battery.voltage().get::<volt>();
+                    let battery_current = battery.current().get::<ampere>();
 
-		    let battery_power = battery.energy_rate().get::<watt>();
+                    let battery_power = battery.energy_rate().get::<watt>();
                     let battery_energy = battery.energy().get::<watt_hour>();
                     let battery_energy_full = battery.energy_full().get::<watt_hour>();
                     let battery_energy_full_design = battery.energy_full().get::<watt_hour>();
 
-		    let battery_time_to_full = match battery.time_to_full() {
-			Some(time) => time.get::<second>().to_string(),
-			None => "None".to_string(),
-		    };
-		    let battery_time_to_empty = match  battery.time_to_empty() {
-			Some(time) => time.get::<second>().to_string(),
-			None => "None".to_string(),
-		    };
+                    let battery_time_to_full = match battery.time_to_full() {
+                        Some(time) => time.get::<second>().to_string(),
+                        None => "None".to_string(),
+                    };
+                    let battery_time_to_empty = match  battery.time_to_empty() {
+                        Some(time) => time.get::<second>().to_string(),
+                        None => "None".to_string(),
+                    };
 
- 		    let battery_temperature = match battery.temperature() {
-			Some(value) => value.get::<degree_celsius>().to_string(),
-			None => "None".to_string(),
-		    };
+                    let battery_temperature = match battery.temperature() {
+                        Some(value) => value.get::<degree_celsius>().to_string(),
+                        None => "None".to_string(),
+                    };
 
-                    home_assistant.publish("battery_level", format!("{:03}", battery_level)).await;
-                    home_assistant.publish("battery_health", format!("{:03}", battery_health)).await;
+                    home_assistant.publish("battery_level", format!("{:03}", battery_level)).await?;
+                    home_assistant.publish("battery_health", format!("{:03}", battery_health)).await?;
 
-		    home_assistant.publish("battery_voltage", format!("{:03}", battery_voltage)).await;
-		    home_assistant.publish("battery_current", format!("{:03}", battery_current)).await;
+                    home_assistant.publish("battery_voltage", format!("{:03}", battery_voltage)).await?;
+                    home_assistant.publish("battery_current", format!("{:03}", battery_current)).await?;
 
-                    home_assistant.publish("battery_power", format!("{:03}", battery_power)).await;
-		    home_assistant.publish("battery_energy", format!("{:03}", battery_energy)).await;
-		    home_assistant.publish("battery_energy_full", format!("{:03}", battery_energy_full)).await;
-		    home_assistant.publish("battery_energy_full_design", format!("{:03}", battery_energy_full_design)).await;
+                    home_assistant.publish("battery_power", format!("{:03}", battery_power)).await?;
+                    home_assistant.publish("battery_energy", format!("{:03}", battery_energy)).await?;
+                    home_assistant.publish("battery_energy_full", format!("{:03}", battery_energy_full)).await?;
+                    home_assistant.publish("battery_energy_full_design", format!("{:03}", battery_energy_full_design)).await?;
 
-                    home_assistant.publish("battery_time_to_empty", battery_time_to_empty).await;
-                    home_assistant.publish("battery_time_to_full", battery_time_to_full).await;
+                    home_assistant.publish("battery_time_to_empty", battery_time_to_empty).await?;
+                    home_assistant.publish("battery_time_to_full", battery_time_to_full).await?;
 
-                    home_assistant.publish("battery_temperature", battery_temperature).await;
-		}
+                    home_assistant.publish("battery_temperature", battery_temperature).await?;
+                }
             }
             _ = signal::ctrl_c() => {
                 log::info!("Terminate signal has been received.");
@@ -618,7 +625,7 @@ pub struct HomeAssistant {
 }
 
 impl HomeAssistant {
-    pub async fn set_available(&self, available: bool) -> Result<()> {
+    pub async fn set_available(&mut self, available: bool) -> Result<()> {
         self.client
             .publish(
                 Publish::new(
@@ -636,25 +643,25 @@ impl HomeAssistant {
         topic_class: &str,
         device_class: Option<&str>,
         state_class: Option<&str>,
-	display_name: Option<&str>,
-	topic_name: Option<&str>,
+        display_name: Option<&str>,
+        topic_name: Option<&str>,
         unit_of_measurement: Option<&str>,
         icon: Option<&str>,
     ) -> Result<()> {
         #[derive(Serialize)]
-	struct TopicDeviceConfig {
-	    identifiers: Vec<String>,
-	    name: String,
-	    model: String,
-	    manufacturer: String,
-	}
+        struct TopicDeviceConfig {
+            identifiers: Vec<String>,
+            name: String,
+            model: String,
+            manufacturer: String,
+        }
 
         #[derive(Serialize)]
         struct TopicConfig {
             name: String,
-	    unique_id: String,
-	    object_id: String,
-	    device: TopicDeviceConfig,
+            unique_id: String,
+            object_id: String,
+            device: TopicDeviceConfig,
 
             #[serde(skip_serializing_if = "Option::is_none")]
             device_class: Option<String>,
@@ -664,40 +671,40 @@ impl HomeAssistant {
             icon: Option<String>,
         }
 
-	let display_name = match display_name {
-	    Some(value) => value,
-	    None => {
-		match topic_name {
-		    Some(topic) => topic,
-		    None => {
-			log::error!("Display name and topic name are both None, one of them must be given.");
-			return Ok(())
-		    }
-		}
-	    }
-	};
-	let topic_name = to_snake_case(match topic_name {
-	    Some(value) => value,
-	    None => display_name,
-	}.as_ref());
+        let display_name = match display_name {
+            Some(value) => value,
+            None => {
+                match topic_name {
+                    Some(topic) => topic,
+                    None => {
+                        log::error!("Display name and topic name are both None, one of them must be given.");
+                        return Ok(())
+                    }
+                }
+            }
+        };
+        let topic_name = to_snake_case(match topic_name {
+            Some(value) => value,
+            None => display_name,
+        }.as_ref());
 
         log::info!("Registering topic `{}`.", topic_name);
 
         let message = serde_json::ser::to_string(&TopicConfig {
             name: to_title_case(format!("{} {}", self.hostname, display_name).as_ref()),
-	    unique_id: format!("system_mqtt_{}_{}", self.hostname, topic_name),
-	    object_id: format!("system_mqtt_{}_{}", self.hostname, topic_name),
+            unique_id: format!("system_mqtt_{}_{}", self.hostname, topic_name),
+            object_id: format!("system_mqtt_{}_{}", self.hostname, topic_name),
             device_class: device_class.map(str::to_string),
             state_class: state_class.map(str::to_string),
             state_topic: format!("system-mqtt/{}/{}", self.hostname, topic_name),
             unit_of_measurement: unit_of_measurement.map(str::to_string),
             icon: icon.map(str::to_string),
-	    device: TopicDeviceConfig {
-		name: format!("System MQTT {}", to_title_case(self.hostname.as_ref())),
-		identifiers: vec![format!("system_mqtt_{}", self.hostname)],
-		model: "Linux Computer".to_string(),
-		manufacturer: "Open Source Community".to_string(),
-	    },
+            device: TopicDeviceConfig {
+                name: format!("System MQTT {}", to_title_case(self.hostname.as_ref())),
+                identifiers: vec![format!("system_mqtt_{}", self.hostname)],
+                model: "Linux Computer".to_string(),
+                manufacturer: "Open Source Community".to_string(),
+            },
         })
         .context("Failed to serialize topic information.")?;
         let mut publish = Publish::new(
@@ -723,20 +730,32 @@ impl HomeAssistant {
         Ok(())
     }
 
-    pub async fn publish(&self, topic_name: &str, value: String) {
-	let topic_name: String = to_snake_case(topic_name);
+    pub async fn publish(&mut self, topic_name: &str, value: String) -> Result<()> {
+        let topic_name: String = to_snake_case(topic_name);
 
         log::debug!("PUBLISH `{}` TO `{}`", value, topic_name);
 
-	let mqtt_topic = format!("system-mqtt/{}/{}", self.hostname, topic_name);
+        let mqtt_topic = format!("system-mqtt/{}/{}", self.hostname, topic_name);
 
         if self.registered_topics.contains::<String>(&topic_name) {
-	    log::info!("Publish {} to `{}`.",  value, mqtt_topic);
-            let mut publish = Publish::new(mqtt_topic.into(), value.into());
+            let mut publish = Publish::new(mqtt_topic.clone(), value.clone().into());
             publish.set_retain(false);
 
             if let Err(error) = self.client.publish(&publish).await {
                 log::error!("Failed to publish topic `{}`: {:?}", topic_name, error);
+                match self.reconnect().await {
+                    Err(e) => {
+                        log::error!("Reconnect failed with error `{:?}`.", e);
+                        return Err(e);
+                    },
+                    Ok(_v) => {
+                        log::info!("Retry Publish {} to `{}`.",  value, mqtt_topic);
+                        if let Err(e) = self.client.publish(&publish).await {
+                            log::error!("Failed to retry to publish topic `{}`: {:?}", topic_name, e);
+                            return Err(e.into());
+                        }
+                    }
+                }
             }
         } else {
             log::error!(
@@ -744,9 +763,26 @@ impl HomeAssistant {
                 topic_name
             );
         }
+
+        Ok(())
     }
 
-    pub async fn disconnect(mut self) -> Result<()> {
+    pub async fn reconnect(&mut self) -> Result<()> {
+        match self.client.disconnect().await {
+            Err(e) => {
+                log::error!("Disconnect failed with error `{:?}`.", e);
+            },
+            Ok(_) => {},
+        }
+        self.client
+            .connect()
+            .await
+            .context("Failed to connect to MQTT server.")?;
+
+        Ok(())
+    }
+
+    pub async fn disconnect(&mut self) -> Result<()> {
         self.set_available(false).await?;
         self.client.disconnect().await?;
 
