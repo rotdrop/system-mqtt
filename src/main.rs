@@ -486,9 +486,60 @@ async fn application_trampoline(config: &Config) -> Result<()> {
             .context("Failed to register a filesystem topic.")?;
     }
 
+    // Initialize LM sensors library.
+    let sensors = lm_sensors::Initializer::default().initialize()?;
+
+    // Loop over all chips and register all sensors. FIXME: a "chip" should be a "sub-device". Possible in HA?
+    for chip in sensors.chip_iter(None) {
+	for feature in chip.feature_iter() {
+	    for sub_feature in feature.sub_feature_iter() {
+		let sensor_name = format!("{}-{}", chip, sub_feature);
+		if ! sensor_name.ends_with("_input") {
+		    continue;
+		}
+		let unit = match sub_feature.value() {
+		    Ok(_v) => _v.unit().to_string(),
+		    _ => "N/A".to_string(),
+		};
+		let device_class = match unit.as_str() {
+		    "C" => "temperature",
+		    "A" => "current",
+		    "V" => "voltage",
+		    "J" => "energy",
+		    "W" => "power",
+		    v => v,
+		};
+		let icon = match unit.as_str() {
+		    "C" => "mdi:thermometer",
+		    "A" => "mdi:current-dc",
+		    "V" => "mdi:sine-wave",
+		    "J" => "mdi:lightning-bolt",
+		    "W" => "mdi:flash",
+		    _ => "None",
+		};
+		let unit = match unit.as_str() {
+		    "C" => "°C",
+		    v => v,
+		};
+		home_assistant
+		    .register_topic(
+			"sensor",
+			Some(&device_class),
+			Some("measurement"),
+			Some(&sensor_name),
+			None,
+			Some(&unit),
+			Some(&icon),
+		    )
+		    .await
+		    .context("Failed to register battery state topic.")?;
+	    }
+	}
+    }
+
     home_assistant.set_available(true).await?;
 
-    let result = availability_trampoline(&mut home_assistant, &mut system, config, manager).await;
+    let result = availability_trampoline(&mut home_assistant, &mut system, config, manager, sensors).await;
 
     if let Err(error) = home_assistant.set_available(false).await {
         // I don't want this error hiding whatever happened in the main loop.
@@ -507,12 +558,14 @@ async fn availability_trampoline(
     system: &mut System,
     config: &Config,
     manager: battery::Manager,
+    sensors: lm_sensors::LMSensors,
 ) -> Result<()> {
     let drive_list: HashMap<PathBuf, String> = config
         .drives
         .iter()
         .map(|drive_config| (drive_config.path.clone(), drive_config.name.clone()))
         .collect();
+    // in order not to void the automounter logic disks potentially should check less often
     let drives_skip_limit: u16 = std::cmp::max(1 as u16, (config.drives_update_interval.as_millis() / config.update_interval.as_millis()) as u16);
     let mut drives_skip_count: u16 = 0xfffe;
 
@@ -540,6 +593,7 @@ async fn availability_trampoline(
 
                 drives_skip_count = drives_skip_count + 1;
                 if drives_skip_count >= drives_skip_limit {
+		    system.refresh_disks_list();
                     system.refresh_disks();
                     // Report filesystem usage.
                     for drive in system.disks() {
@@ -607,6 +661,24 @@ async fn availability_trampoline(
 
                     home_assistant.publish("battery_temperature", battery_temperature).await?;
                 }
+
+		// Loop over all chips and report all sensor values
+		for chip in sensors.chip_iter(None) {
+		    for feature in chip.feature_iter() {
+			for sub_feature in feature.sub_feature_iter() {
+			    let sensor_name = format!("{}-{}", chip, sub_feature);
+			    if ! sensor_name.ends_with("_input") {
+				continue;
+			    }
+			    let value = match sub_feature.value().ok() {
+				Some(value) => format!("{:03}", value.raw_value()),
+				_ => "None".to_string(),
+			    };
+			    home_assistant.publish(&sensor_name, value).await?;
+			}
+		    }
+		}
+
             }
             _ = signal::ctrl_c() => {
                 log::info!("Terminate signal has been received.");
