@@ -352,7 +352,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
     home_assistant
         .register_topic(
             "sensor",
-            Some("battery"),
+            Some("voltage"),
             Some("measurement"),
             Some("battery voltage"),
             None,
@@ -507,6 +507,7 @@ async fn application_trampoline(config: &Config) -> Result<()> {
 		    "V" => "voltage",
 		    "J" => "energy",
 		    "W" => "power",
+		    "Wh" => "energy",
 		    v => v,
 		};
 		let icon = match unit.as_str() {
